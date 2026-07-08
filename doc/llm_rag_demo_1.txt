@@ -1,0 +1,602 @@
+------------------------------------------------------------
+TUTORIAL — USING OLLAMA WITH A SIMPLE CSV RAG PROJECT
+------------------------------------------------------------
+
+Objective:
+In this tutorial, you will learn how to:
+
+1. Check if Ollama is installed.
+2. Download and run a local LLM.
+3. Test basic Ollama commands.
+4. Download a CSV dataset.
+5. Build a simple CSV RAG / SQL RAG system.
+6. Ask natural-language questions about the CSV file.
+
+Important idea:
+For CSV files, numbers, transactions, and analytics, we should not use only a vector RAG.
+We should use a SQL RAG approach.
+
+CSV file → database → SQL query → LLM explanation
+
+------------------------------------------------------------
+PART 1 — CHECK OLLAMA
+------------------------------------------------------------
+
+Step 1 — Open a terminal
+
+On Windows, open:
+
+PowerShell
+
+or
+
+Command Prompt
+
+------------------------------------------------------------
+
+Step 2 — Check the Ollama version
+
+Run:
+
+ollama --version
+
+Expected result:
+
+You should see the installed version of Ollama.
+
+Example:
+
+ollama version is 0.x.x
+
+------------------------------------------------------------
+
+Step 3 — Check the installed models
+
+Run:
+
+ollama list
+
+or:
+
+ollama ls
+
+Expected result:
+
+You should see the list of models already installed on your machine.
+
+If the list is empty, it means no model has been downloaded yet.
+
+------------------------------------------------------------
+PART 2 — DOWNLOAD AND RUN A MODEL
+------------------------------------------------------------
+
+Step 4 — Pull a small model
+
+For a weak or standard laptop, start with Phi-3:
+
+ollama pull phi3
+
+This command downloads the model locally.
+
+------------------------------------------------------------
+
+Step 5 — Run the model
+
+Run:
+
+ollama run phi3
+
+Then ask a simple question:
+
+- Explain what a CSV file is in 3 sentences.
+- Explain what is RAG - Retrieval-Augmented Generation  is in 3 sentences.
+
+To exit the model, type:
+
+/bye
+
+------------------------------------------------------------
+
+Step 6 — Optional: pull a stronger model
+
+If your machine has enough RAM, you can try:
+
+ollama pull mistral:7b
+
+or:
+
+ollama pull llama3.1:8b
+
+or for coding projects:
+
+ollama pull qwen2.5-coder:7b
+
+Recommended rule:
+
+Weak laptop:
+phi3
+
+Standard laptop:
+mistral:7b
+llama3.1:8b
+
+Coding project:
+qwen2.5-coder:7b
+
+------------------------------------------------------------
+PART 3 — TEST OLLAMA FROM THE API
+------------------------------------------------------------
+
+Step 7 — Make sure Ollama is running
+
+Usually, Ollama runs automatically in the background.
+
+If needed, run:
+
+ollama serve
+
+------------------------------------------------------------
+
+Step 8 — Test the local API
+
+In PowerShell, run:
+
+curl http://localhost:11434/api/generate -d "{\"model\":\"phi3\",\"prompt\":\"Say hello in one sentence.\",\"stream\":false}"
+
+
+
+Expected result:
+
+Ollama should return a JSON response containing the generated answer.
+
+
+Use this link to analyse the answer : 
+
+https://jsonlint.com/json-tree
+
+
+------------------------------------------------------------
+PART 4 — CREATE THE CSV RAG PROJECT
+------------------------------------------------------------
+
+Step 9 — Create a project folder
+
+Run:
+
+mkdir ollama-csv-rag
+cd ollama-csv-rag
+
+------------------------------------------------------------
+
+Step 10 — Create a Python virtual environment
+
+Run:
+
+py -3.12 -m venv .venv
+
+Activate it:
+
+.venv\Scripts\activate
+
+If you use macOS or Linux:
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+------------------------------------------------------------
+
+Step 11 — Install the required Python libraries
+
+Run:
+
+pip install pandas duckdb requests tabulate
+
+Explanation:
+
+pandas:
+used to read and inspect the CSV file.
+
+duckdb:
+used as a local SQL database.
+
+requests:
+used to call the Ollama API.
+
+tabulate:
+used to display query results clearly.
+
+------------------------------------------------------------
+PART 5 — DOWNLOAD THE CSV FILE
+------------------------------------------------------------
+
+Step 12 — Download the CSV file
+
+PowerShell command:
+
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/inskillflow/csv-llm-openai/refs/heads/main/data/data1-anonymized.csv" -OutFile "data1-anonymized.csv"
+
+Alternative with curl:
+
+curl -L "https://raw.githubusercontent.com/inskillflow/csv-llm-openai/refs/heads/main/data/data1-anonymized.csv" -o data1-anonymized.csv
+
+------------------------------------------------------------
+
+Step 13 — Verify that the file exists
+
+Run:
+
+dir
+
+You should see:
+
+data1-anonymized.csv
+
+------------------------------------------------------------
+PART 6 — CREATE THE CSV RAG PYTHON SCRIPT
+------------------------------------------------------------
+
+Step 14 — Create a file named:
+
+csv_rag_ollama.py
+
+Then paste this code:
+
+------------------------------------------------------------
+START OF FILE: csv_rag_ollama.py
+------------------------------------------------------------
+
+import re
+import pandas as pd
+import duckdb
+import requests
+from tabulate import tabulate
+
+CSV_FILE = "data1-anonymized.csv"
+MODEL_NAME = "phi3"
+OLLAMA_URL = "http://localhost:11434/api/generate"
+
+
+def ask_ollama(prompt, model=MODEL_NAME):
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False
+    }
+
+    response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+    response.raise_for_status()
+
+    return response.json()["response"].strip()
+
+
+def clean_sql(sql_text):
+    sql_text = sql_text.strip()
+
+    sql_text = sql_text.replace("```sql", "")
+    sql_text = sql_text.replace("```", "")
+    sql_text = sql_text.strip()
+
+    # Keep only the first SQL statement
+    if ";" in sql_text:
+        sql_text = sql_text.split(";")[0]
+
+    sql_text = sql_text.strip()
+
+    return sql_text
+
+
+def is_safe_select_query(sql):
+    forbidden_words = [
+        "insert", "update", "delete", "drop", "alter",
+        "create", "truncate", "replace"
+    ]
+
+    sql_lower = sql.lower()
+
+    if not sql_lower.startswith("select"):
+        return False
+
+    for word in forbidden_words:
+        if word in sql_lower:
+            return False
+
+    return True
+
+
+def main():
+    print("------------------------------------------------------------")
+    print("CSV RAG WITH OLLAMA")
+    print("------------------------------------------------------------")
+
+    print("\nLoading CSV file...")
+    df = pd.read_csv(CSV_FILE)
+
+    print("\n--- Data Cleaning & Exploration ---")
+    print(f"Initial shape: {df.shape}")
+
+    print("\nMissing values per column:")
+    print(df.isnull().sum())
+
+    # Basic Data Cleaning
+    df = df.dropna(how='all') # Drop completely empty rows
+    df = df.drop_duplicates() # Remove duplicates
+    
+    # Handle missing values
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            df.fillna({col: 'Unknown'}, inplace=True)
+        else:
+            df.fillna({col: 0}, inplace=True)
+
+    print(f"\nShape after basic cleaning: {df.shape}")
+
+    print("\nData summary statistics:")
+    print(df.describe(include='all').to_string())
+
+    print("\nCSV columns and data types:")
+    for col in df.columns:
+        print(f"- {col}: {df[col].dtype}")
+        # Show values for categorical or small discrete numeric features
+        if df[col].nunique() < 15:
+            print(f"  Unique Values: {df[col].unique().tolist()}")
+
+    print("\nFirst rows:")
+    print(df.head())
+
+    con = duckdb.connect()
+    con.register("transactions", df)
+
+    schema_description = ""
+    for col in df.columns:
+        schema_description += f"- {col}: {df[col].dtype}\n"
+
+    while True:
+        print("\n------------------------------------------------------------")
+        question = input("Ask a question about the CSV file, or type 'exit': ")
+
+        if question.lower() == "exit":
+            print("Goodbye.")
+            break
+
+        sql_prompt = f"""
+You are a data analyst.
+
+Your task is to write a DuckDB SQL query.
+
+The table name is:
+
+transactions
+
+The available columns are:
+
+{schema_description}
+
+User question:
+
+{question}
+
+Rules:
+- Return only SQL.
+- Return only one SELECT query.
+- Do not use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, or TRUNCATE.
+- Do not explain the SQL.
+"""
+
+        print("\nGenerating SQL with Ollama...")
+        sql_query = ask_ollama(sql_prompt)
+        sql_query = clean_sql(sql_query)
+
+        print("\nGenerated SQL:")
+        print(sql_query)
+
+        if not is_safe_select_query(sql_query):
+            print("\nThe generated SQL query was rejected for safety reasons.")
+            continue
+
+        try:
+            result_df = con.execute(sql_query).df()
+        except Exception as e:
+            print("\nSQL execution error:")
+            print(e)
+            continue
+
+        print("\nSQL result:")
+        if result_df.empty:
+            print("No result found.")
+        else:
+            print(tabulate(result_df.head(20), headers="keys", tablefmt="grid"))
+
+        answer_prompt = f"""
+You are a helpful data assistant.
+
+The user asked:
+
+{question}
+
+The SQL query used was:
+
+{sql_query}
+
+The SQL result is:
+
+{result_df.head(20).to_string(index=False)}
+
+Write a clear answer for a non-technical user.
+
+Important:
+- Do not invent numbers.
+- Use only the SQL result.
+- If the result is limited, say that it is based on the available CSV data.
+"""
+
+        print("\nGenerating final answer with Ollama...")
+        final_answer = ask_ollama(answer_prompt)
+
+        print("\nFinal answer:")
+        print(final_answer)
+
+
+if __name__ == "__main__":
+    main()
+
+------------------------------------------------------------
+END OF FILE
+------------------------------------------------------------
+
+------------------------------------------------------------
+PART 7 — RUN THE CSV RAG PROJECT
+------------------------------------------------------------
+
+Step 15 — Run the script
+
+Run:
+
+python csv_rag_ollama.py
+
+You should see:
+
+- the CSV columns;
+- the first rows;
+- a prompt asking you to ask a question.
+
+------------------------------------------------------------
+
+Step 16 — Ask questions
+
+Try questions such as:
+
+What is the total amount in the dataset?
+
+Which category has the highest total amount?
+
+What are the top 5 merchants by total amount?
+
+How many transactions are in the file?
+
+What is the average transaction amount?
+
+Show me the monthly spending trend.
+
+------------------------------------------------------------
+PART 8 — WHAT IS HAPPENING?
+------------------------------------------------------------
+
+This is not just a normal chatbot.
+
+This is a simple CSV RAG system.
+
+The process is:
+
+1. The user asks a question in English.
+2. The LLM converts the question into a SQL query.
+3. DuckDB executes the SQL query on the CSV data.
+4. The result is returned to the LLM.
+5. The LLM explains the result in natural language.
+
+Pipeline:
+
+User question
+→ LLM generates SQL
+→ DuckDB queries the CSV
+→ result is retrieved
+→ LLM writes the final answer
+
+------------------------------------------------------------
+PART 9 — WHY THIS IS CALLED SQL RAG
+------------------------------------------------------------
+
+RAG means Retrieval-Augmented Generation.
+
+The model does not answer only from memory.
+
+It first retrieves information, then generates an answer.
+
+In this project, the retrieval step is done with SQL.
+
+So we can call this:
+
+SQL RAG
+
+or
+
+CSV RAG
+
+or
+
+Database RAG
+
+------------------------------------------------------------
+PART 10 — VERY IMPORTANT LIMITATION
+------------------------------------------------------------
+
+The LLM should not invent answers.
+
+Bad design:
+
+User asks:
+How much did I spend last month?
+
+LLM answers directly from imagination.
+
+Good design:
+
+User asks:
+How much did I spend last month?
+
+System runs SQL:
+SELECT SUM(amount) ...
+
+Then the LLM explains the result.
+
+------------------------------------------------------------
+PART 11 — OPTIONAL EMBEDDING MODEL FOR DOCUMENT RAG
+------------------------------------------------------------
+
+For PDF or text-document RAG, you may need embeddings.
+
+Ollama can generate embeddings using embedding models through its API. Embeddings are numeric vectors used for semantic search and RAG pipelines. :contentReference[oaicite:1]{index=1}
+
+Example:
+
+ollama pull nomic-embed-text
+
+Then test:
+
+echo "This is a test sentence." | ollama run nomic-embed-text
+
+But for CSV analytics, SQL RAG is usually better than vector RAG.
+
+------------------------------------------------------------
+FINAL SUMMARY
+------------------------------------------------------------
+
+Use this rule:
+
+CSV files, tables, numbers, money, statistics:
+Use SQL RAG.
+
+PDFs, text documents, course notes, manuals:
+Use Document RAG with embeddings.
+
+Products, board games, recommendations:
+Use Metadata RAG.
+
+Healthcare or sensitive information:
+Use controlled RAG with trusted sources.
+
+For this CSV example:
+
+Best simple model:
+phi3
+
+Better model for standard machines:
+mistral:7b
+llama3.1:8b
+
+Better model for coding:
+qwen2.5-coder:7b
+
+Main idea:
+
+The database calculates.
+The LLM explains.
