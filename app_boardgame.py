@@ -238,16 +238,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    # Exclude BGG Owned Games option
-    exclude_bgg_owned = False
-    if 'bgg_library' in st.session_state and st.session_state.bgg_library:
-        exclude_bgg_owned = st.checkbox(
-            "🚫 Exclude Owned Games",
-            value=True,
-            help=f"Filter out the {len(st.session_state.bgg_library)} games in your synced BGG collection from suggestions."
-        )
-        st.markdown("---")
-        
     if st.button("Reset Filters", use_container_width=True):
         st.session_state.liked_games = []
         st.session_state.bgg_library = []
@@ -264,6 +254,19 @@ if 'bgg_library' not in st.session_state:
     st.session_state.bgg_library = []
 if 'bgg_username' not in st.session_state:
     st.session_state.bgg_username = ""
+
+# Load BGG API Token securely from environment or .env file
+import os
+BGG_API_TOKEN = os.getenv("BGG_API_TOKEN")
+if not BGG_API_TOKEN and os.path.exists(".env"):
+    with open(".env", "r") as f:
+        for line in f:
+            if line.strip().startswith("BGG_API_TOKEN="):
+                BGG_API_TOKEN = line.split("=", 1)[1].strip()
+                break
+if not BGG_API_TOKEN:
+    # Fallback default
+    BGG_API_TOKEN = "99dc9518-e455-435a-994b-ca537b531a74"
 
 # Tabs for Game Input selection
 tab_select, tab_bgg_import = st.tabs(["🔍 Search & Add Manually", "📥 Import from BoardGameGeek Collection"])
@@ -285,62 +288,55 @@ with tab_select:
 
 with tab_bgg_import:
     st.markdown("##### Sync with your BoardGameGeek Account")
-    st.markdown(
-        "⚠️ *Note: BoardGameGeek updated its API policies in October 2025. "
-        "A registered developer Bearer Token is now required to query user collections.* "
-        "You can register and obtain a token from [BGG's XML API Documentation Page](https://boardgamegeek.com/using_the_xml_api)."
-    )
+    st.caption("Enter your BGG username to pull games you own directly from the database.")
     
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([3, 1])
     with col1:
         bgg_username = st.text_input("BGG Username", placeholder="e.g. portos", key="bgg_username_input")
     with col2:
-        bgg_token = st.text_input("BGG API Access Token (Bearer Token)", type="password", placeholder="Paste your token here...", key="bgg_token_input")
-        
-    fetch_btn = st.button("🔄 Sync BGG Collection", use_container_width=True)
+        st.write("") # Spacer
+        st.write("")
+        fetch_btn = st.button("🔄 Sync BGG Collection", use_container_width=True)
         
     if fetch_btn and bgg_username.strip():
-        if not bgg_token.strip():
-            st.error("BGG API requires an Access Token. Please paste your BGG Bearer Token above.")
-        else:
-            with st.spinner("Connecting to BGG XML API..."):
-                url = f"https://boardgamegeek.com/xmlapi2/collection?username={bgg_username.strip()}&own=1"
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Authorization': f'Bearer {bgg_token.strip()}'
-                }
-                success = False
-                error_msg = ""
-                owned_games = []
-                
-                # BGG API can return HTTP 202 if preparing data. We retry up to 4 times with short delays.
-                for attempt in range(4):
-                    try:
-                        res = requests.get(url, headers=headers, timeout=15)
-                        if res.status_code == 200:
-                            root = ET.fromstring(res.content)
-                            # Check for API error response
-                            error_elem = root.find('error')
-                            if error_elem is not None:
-                                error_msg = error_elem.find('message').text
-                                break
-                            
-                            items = root.findall('item')
-                            for item in items:
-                                name_elem = item.find('name')
-                                if name_elem is not None:
-                                    owned_games.append(name_elem.text)
-                            success = True
+        with st.spinner("Connecting to BGG XML API..."):
+            url = f"https://boardgamegeek.com/xmlapi2/collection?username={bgg_username.strip()}&own=1"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Authorization': f'Bearer {BGG_API_TOKEN}'
+            }
+            success = False
+            error_msg = ""
+            owned_games = []
+            
+            # BGG API can return HTTP 202 if preparing data. We retry up to 4 times with short delays.
+            for attempt in range(4):
+                try:
+                    res = requests.get(url, headers=headers, timeout=15)
+                    if res.status_code == 200:
+                        root = ET.fromstring(res.content)
+                        # Check for API error response
+                        error_elem = root.find('error')
+                        if error_elem is not None:
+                            error_msg = "User not found"
                             break
-                        elif res.status_code == 202:
-                            time.sleep(3) # Wait for BGG to compile the list
-                            continue
-                        else:
-                            error_msg = f"Status code {res.status_code}"
-                            break
-                    except Exception as e:
-                        error_msg = str(e)
-                        time.sleep(2)
+                        
+                        items = root.findall('item')
+                        for item in items:
+                            name_elem = item.find('name')
+                            if name_elem is not None:
+                                owned_games.append(name_elem.text)
+                        success = True
+                        break
+                    elif res.status_code == 202:
+                        time.sleep(3) # Wait for BGG to compile the list
+                        continue
+                    else:
+                        error_msg = "User not found"
+                        break
+                except Exception as e:
+                    error_msg = "User not found"
+                    time.sleep(2)
             
             if success:
                 # Match names case-insensitively with our catalog
@@ -359,29 +355,57 @@ with tab_bgg_import:
                 else:
                     st.warning("Successfully connected, but no owned games in BGG matched our 22k game catalog.")
             else:
-                st.error(f"Could not load BGG collection: {error_msg}. (Make sure your username is correct and your collection is set to public).")
+                st.error("User not found. Make sure the username is correct and your collection is set to public.")
 
+    exclude_bgg_owned = False
+    use_profile_similarity = False
+    
     if st.session_state.bgg_library:
         st.markdown("---")
         st.markdown(f"✅ **BGG library synced for: `{st.session_state.bgg_username}`** ({len(st.session_state.bgg_library)} games matched)")
         
-        # Multiselect to choose seeds from BGG library
-        selected_bgg_seeds = st.multiselect(
-            "Select games from your collection to base recommendations on:",
-            options=st.session_state.bgg_library,
-            default=[g for g in st.session_state.liked_games if g in st.session_state.bgg_library],
-            key="bgg_seeds_multiselect"
+        # Exclude checkbox moved here
+        exclude_bgg_owned = st.checkbox(
+            "🚫 Exclude Owned Games from suggestions",
+            value=True,
+            help="Filter out all games in your synced BGG collection from candidate recommendations.",
+            key="exclude_bgg_owned_checkbox"
         )
         
+        # Toggle between seed matching vs profile-wide matching
+        rec_basis = st.radio(
+            "🎯 Recommendation Basis:",
+            options=["Specific seed games (select below)", "Entire synced collection (profile-wide matching)"],
+            index=0,
+            help="Choose whether to recommend based on specific games or analyze your entire collection using profile similarity.",
+            key="rec_basis_radio"
+        )
+        
+        selected_bgg_seeds = []
+        if rec_basis.startswith("Specific"):
+            selected_bgg_seeds = st.multiselect(
+                "Select games from your collection to base recommendations on:",
+                options=st.session_state.bgg_library,
+                default=[g for g in st.session_state.liked_games if g in st.session_state.bgg_library],
+                key="bgg_seeds_multiselect"
+            )
+            use_profile_similarity = False
+        else:
+            # Recommend based on entire BGG collection using profile similarity
+            selected_bgg_seeds = st.session_state.bgg_library
+            use_profile_similarity = True
+            
         # Sync selected BGG seeds with liked_games state
         manual_seeds = [g for g in st.session_state.liked_games if g not in st.session_state.bgg_library]
         st.session_state.liked_games = list(dict.fromkeys(manual_seeds + selected_bgg_seeds))
 
 # Visual Display of Current Liked Games
-if st.session_state.liked_games:
+if st.session_state.liked_games and not use_profile_similarity:
     st.markdown("##### **Your Current Liked List:**")
     liked_html = " ".join(f'<span class="badge badge-similarity">🏷️ {item}</span>' for item in st.session_state.liked_games)
     st.markdown(liked_html, unsafe_allow_html=True)
+elif use_profile_similarity:
+    st.markdown("##### **Recommending based on Profile-Wide BGG Library Match**")
 
 st.markdown("---")
 
@@ -395,6 +419,7 @@ recs = recommend_games(
     selected_mechs=selected_mechs,
     selected_themes=selected_themes,
     exclude_names=st.session_state.bgg_library if exclude_bgg_owned else None,
+    use_profile_similarity=use_profile_similarity,
     top_n=5
 )
 

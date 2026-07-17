@@ -20,7 +20,8 @@ def load_data():
     return _DATA_CACHE
 
 def recommend_games(selected_names, player_count_range=None, playtime_option=None, complexity_range=None, 
-                    selected_cats=None, selected_mechs=None, selected_themes=None, exclude_names=None, top_n=5):
+                    selected_cats=None, selected_mechs=None, selected_themes=None, exclude_names=None, 
+                    use_profile_similarity=False, top_n=5):
     """
     selected_names: List of names of games liked by the user
     player_count_range: Tuple (min_players, max_players), e.g. (2, 4)
@@ -30,6 +31,7 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
     selected_mechs: List of mechanics to filter on
     selected_themes: List of themes to filter on
     exclude_names: List of names to explicitly exclude from candidate recommendations
+    use_profile_similarity: If True, calculates pairwise similarity to each game in user's profile and takes top matching averages.
     top_n: Number of recommendations to return
     """
     data = load_data()
@@ -55,7 +57,6 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
         
     # Exclude games in the custom exclusion list (e.g. user's BGG library)
     if exclude_names:
-        exclude_indices = []
         # Bulk match case-insensitively for performance
         exclude_names_set = {n.lower() for n in exclude_names}
         exclude_mask = df['Name'].str.lower().isin(exclude_names_set)
@@ -132,17 +133,38 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
         selected_features = features_df.values[selected_indices]
         candidate_features = features_df.values[candidate_indices]
         
-        user_vector = np.mean(selected_features, axis=0)
-        user_norm = np.linalg.norm(user_vector)
-        
-        if user_norm > 0:
+        if use_profile_similarity:
+            # Pairwise cosine similarity between candidates (N) and user's profile games (M)
+            user_norms = np.linalg.norm(selected_features, axis=1)
+            user_norms[user_norms == 0] = 1.0
+            
             candidate_norms = np.linalg.norm(candidate_features, axis=1)
             candidate_norms[candidate_norms == 0] = 1.0
             
-            dot_products = np.dot(candidate_features, user_vector)
-            cosine_similarities = dot_products / (user_norm * candidate_norms)
+            # shape (N, M)
+            dot_products = np.dot(candidate_features, selected_features.T)
+            pairwise_similarities = dot_products / (candidate_norms[:, None] * user_norms[None, :])
             
-            sim_scores[candidate_indices] = cosine_similarities
+            # Rank candidates by how closely they match their top 5 closest matches in the user's collection
+            M = len(selected_indices)
+            k = min(5, M)
+            if k > 0:
+                top_k_similarities = np.partition(pairwise_similarities, -k, axis=1)[:, -k:]
+                sim_scores[candidate_indices] = np.mean(top_k_similarities, axis=1)
+            else:
+                sim_scores[candidate_indices] = 0.0
+        else:
+            user_vector = np.mean(selected_features, axis=0)
+            user_norm = np.linalg.norm(user_vector)
+            
+            if user_norm > 0:
+                candidate_norms = np.linalg.norm(candidate_features, axis=1)
+                candidate_norms[candidate_norms == 0] = 1.0
+                
+                dot_products = np.dot(candidate_features, user_vector)
+                cosine_similarities = dot_products / (user_norm * candidate_norms)
+                
+                sim_scores[candidate_indices] = cosine_similarities
             
     # 4. Integrate rating/popularity
     bayes_ratings = df['BayesAvgRating'].values
