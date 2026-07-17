@@ -238,8 +238,20 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    # Exclude BGG Owned Games option
+    exclude_bgg_owned = False
+    if 'bgg_library' in st.session_state and st.session_state.bgg_library:
+        exclude_bgg_owned = st.checkbox(
+            "🚫 Exclude Owned Games",
+            value=True,
+            help=f"Filter out the {len(st.session_state.bgg_library)} games in your synced BGG collection from suggestions."
+        )
+        st.markdown("---")
+        
     if st.button("Reset Filters", use_container_width=True):
         st.session_state.liked_games = []
+        st.session_state.bgg_library = []
+        st.session_state.bgg_username = ""
         st.rerun()
 
 # Main Body: Game Selection
@@ -248,6 +260,10 @@ st.caption("Tell us what games you love, and we will find others with similar me
 
 if 'liked_games' not in st.session_state:
     st.session_state.liked_games = []
+if 'bgg_library' not in st.session_state:
+    st.session_state.bgg_library = []
+if 'bgg_username' not in st.session_state:
+    st.session_state.bgg_username = ""
 
 # Tabs for Game Input selection
 tab_select, tab_bgg_import = st.tabs(["🔍 Search & Add Manually", "📥 Import from BoardGameGeek Collection"])
@@ -335,14 +351,31 @@ with tab_bgg_import:
                         matched.append(all_names_lower[g_name.lower()])
                 
                 if matched:
-                    st.session_state.liked_games = matched
-                    st.success(f"Imported **{len(matched)}** matching games from **{bgg_username}**'s BGG collection!")
+                    st.session_state.bgg_library = matched
+                    st.session_state.bgg_username = bgg_username.strip()
+                    st.success(f"Successfully synced **{len(matched)}** games from **{bgg_username}**'s BGG collection!")
                     time.sleep(1.5)
                     st.rerun()
                 else:
                     st.warning("Successfully connected, but no owned games in BGG matched our 22k game catalog.")
             else:
                 st.error(f"Could not load BGG collection: {error_msg}. (Make sure your username is correct and your collection is set to public).")
+
+    if st.session_state.bgg_library:
+        st.markdown("---")
+        st.markdown(f"✅ **BGG library synced for: `{st.session_state.bgg_username}`** ({len(st.session_state.bgg_library)} games matched)")
+        
+        # Multiselect to choose seeds from BGG library
+        selected_bgg_seeds = st.multiselect(
+            "Select games from your collection to base recommendations on:",
+            options=st.session_state.bgg_library,
+            default=[g for g in st.session_state.liked_games if g in st.session_state.bgg_library],
+            key="bgg_seeds_multiselect"
+        )
+        
+        # Sync selected BGG seeds with liked_games state
+        manual_seeds = [g for g in st.session_state.liked_games if g not in st.session_state.bgg_library]
+        st.session_state.liked_games = list(dict.fromkeys(manual_seeds + selected_bgg_seeds))
 
 # Visual Display of Current Liked Games
 if st.session_state.liked_games:
@@ -361,6 +394,7 @@ recs = recommend_games(
     selected_cats=selected_cats,
     selected_mechs=selected_mechs,
     selected_themes=selected_themes,
+    exclude_names=st.session_state.bgg_library if exclude_bgg_owned else None,
     top_n=5
 )
 

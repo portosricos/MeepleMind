@@ -20,7 +20,7 @@ def load_data():
     return _DATA_CACHE
 
 def recommend_games(selected_names, player_count_range=None, playtime_option=None, complexity_range=None, 
-                    selected_cats=None, selected_mechs=None, selected_themes=None, top_n=5):
+                    selected_cats=None, selected_mechs=None, selected_themes=None, exclude_names=None, top_n=5):
     """
     selected_names: List of names of games liked by the user
     player_count_range: Tuple (min_players, max_players), e.g. (2, 4)
@@ -29,6 +29,7 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
     selected_cats: List of categories to filter on
     selected_mechs: List of mechanics to filter on
     selected_themes: List of themes to filter on
+    exclude_names: List of names to explicitly exclude from candidate recommendations
     top_n: Number of recommendations to return
     """
     data = load_data()
@@ -40,7 +41,6 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
     selected_ids = []
     selected_indices = []
     for name in selected_names:
-        # Match case-insensitively
         matches = df[df['Name'].str.lower() == name.lower()]
         if not matches.empty:
             selected_ids.append(matches.iloc[0]['BGGId'])
@@ -53,13 +53,27 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
     if selected_indices:
         candidates_mask[selected_indices] = False
         
+    # Exclude games in the custom exclusion list (e.g. user's BGG library)
+    if exclude_names:
+        exclude_indices = []
+        # Bulk match case-insensitively for performance
+        exclude_names_set = {n.lower() for n in exclude_names}
+        exclude_mask = df['Name'].str.lower().isin(exclude_names_set)
+        exclude_indices = df[exclude_mask].index.tolist()
+        if exclude_indices:
+            candidates_mask[exclude_indices] = False
+        
     # Filter by player count range: check if candidate range overlaps with requested range
     if player_count_range is not None:
         req_min, req_max = player_count_range
+        # Data cleaning check: Exclude games with invalid player counts (<= 0)
+        candidates_mask &= (df['MinPlayers'] > 0) & (df['MaxPlayers'] > 0)
         candidates_mask &= (df['MinPlayers'] <= req_max) & (df['MaxPlayers'] >= req_min)
         
     # Filter by playtime options
     if playtime_option and playtime_option != "Any Duration":
+        # Data cleaning check: Exclude games with invalid playtimes (<= 0)
+        candidates_mask &= (df['MaxPlaytime'] > 0)
         if playtime_option == "Short (< 30 min)":
             candidates_mask &= (df['MaxPlaytime'] < 30)
         elif playtime_option == "Medium (30 - 60 min)":
@@ -74,6 +88,8 @@ def recommend_games(selected_names, player_count_range=None, playtime_option=Non
     # Filter by custom complexity range
     if complexity_range is not None:
         min_w, max_w = complexity_range
+        # Data cleaning check: Exclude games with invalid complexity (<= 0)
+        candidates_mask &= (df['GameWeight'] > 0)
         candidates_mask &= (df['GameWeight'] >= min_w) & (df['GameWeight'] <= max_w)
         
     # Filter by categories
