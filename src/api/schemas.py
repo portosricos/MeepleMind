@@ -29,7 +29,7 @@ class RecommendationRequest(BaseModel):
 class RecommendationItem(BaseModel):
     BGGId: int
     Name: str
-    Description: str
+    Description: Optional[str] = ""
     YearPublished: int
     GameWeight: float
     AvgRating: float
@@ -38,11 +38,11 @@ class RecommendationItem(BaseModel):
     MaxPlayers: int
     ComAgeRec: float
     LanguageEase: float
-    BestPlayers: str
+    BestPlayers: Optional[str] = ""
     TotalEngagement: int
     MaxPlaytime: float
     MinPlaytime: float
-    ImagePath: str
+    ImagePath: Optional[str] = ""
     Categories: List[str]
     Mechanics: List[str]
     Themes: List[str]
