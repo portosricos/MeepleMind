@@ -1,21 +1,45 @@
 import os
 import requests
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-
 def ask_ollama(prompt: str, model: str = "phi3") -> str:
-    """Send prompt to local Ollama API model and return text response."""
+    """Send prompt to Ollama API model with automatic host discovery and fallback."""
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False
     }
-    try:
-        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=120)
-        response.raise_for_status()
-        return response.json()["response"].strip()
-    except Exception as e:
-        return f"Error communicating with local AI model: {str(e)}. Please make sure Ollama is running and has the '{model}' model pulled."
+    
+    # Candidate Ollama endpoint URLs to try in order
+    candidate_hosts = []
+    env_host = os.getenv("OLLAMA_HOST")
+    if env_host:
+        candidate_hosts.append(env_host)
+    
+    candidate_hosts.extend([
+        "http://ollama:11434",
+        "http://host.docker.internal:11434",
+        "http://localhost:11434",
+        "http://127.0.0.1:11434"
+    ])
+    
+    # Remove duplicate candidate URLs while preserving order
+    candidate_hosts = list(dict.fromkeys(candidate_hosts))
+    
+    last_error = None
+    for host in candidate_hosts:
+        try:
+            url = f"{host.rstrip('/')}/api/generate"
+            response = requests.post(url, json=payload, timeout=120)
+            if response.status_code == 200:
+                return response.json()["response"].strip()
+        except Exception as e:
+            last_error = e
+            continue
+            
+    return (
+        f"Error communicating with local AI model ({str(last_error)}). "
+        f"Please make sure Ollama is running (e.g. `ollama serve`) and has pulled the '{model}' model (`ollama pull {model}`)."
+    )
 
 def generate_game_explanation(rec: dict, liked_games: list, model: str = "phi3") -> str:
     """Construct prompt and query Ollama for why the user will love a specific recommended game."""
