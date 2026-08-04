@@ -1,4 +1,5 @@
 import streamlit as st
+from src.ui.api_client import is_backend_online, request_ai_explanation_api
 from src.utils.ai_explainer import generate_game_explanation
 
 def render_hero_header():
@@ -85,7 +86,10 @@ def render_game_card(rec: dict, liked_games: list):
         explain_key = f"explain_{rec['BGGId']}"
         if st.button("🔮 Ask AI why I will love this", key=explain_key, use_container_width=True):
             with st.spinner("Analyzing rules, themes, and mechanics..."):
-                explanation = generate_game_explanation(rec, liked_games, model="phi3")
+                if is_backend_online():
+                    explanation = request_ai_explanation_api(rec, liked_games, model="phi3")
+                else:
+                    explanation = generate_game_explanation(rec, liked_games, model="phi3")
                 st.markdown(f"<div style='font-size: 0.9rem; color: #e2e8f0; line-height: 1.5; margin-top: 0.5rem; background: rgba(255,255,255,0.02); padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.04);'>{explanation}</div>", unsafe_allow_html=True)
         
         st.markdown("</div>", unsafe_allow_html=True)

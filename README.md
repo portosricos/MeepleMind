@@ -1,6 +1,31 @@
 # 🎲 MeepleMind - Premium Board Game Suggestion System
 
-**MeepleMind** is a data-driven board game recommendation dashboard powered by linear algebra (Cosine Similarity) and local AI (Ollama Phi-3). Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
+**MeepleMind** is a decoupled full-stack board game recommendation platform powered by a **FastAPI REST API Backend**, a **Streamlit Frontend Client**, linear algebra (Cosine Similarity), and local AI (Ollama Phi-3). Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
+
+---
+
+## 🏗️ Decoupled Architecture Overview
+
+MeepleMind decouples presentation from computation:
+
+```text
+┌────────────────────────────────┐         HTTP REST API         ┌────────────────────────────────┐
+│  Streamlit Frontend (UI)       │ ───────────────────────────>  │  FastAPI Backend Server        │
+│  Port: 8502                    │  POST /api/v1/recommend       │  Port: 8000                    │
+│  (src/ui/ & app_boardgame.py)  │  POST /api/v1/bgg-collection  │  (src/api/ & run_backend.py)   │
+└────────────────────────────────┘ <───────────────────────────  └────────────────────────────────┘
+                                           JSON Responses                      │
+                                                                               ▼
+                                                                  NumPy Vector Engine & Ollama
+```
+
+### 🛰️ REST API Endpoints (`http://localhost:8000`):
+- **`GET /health`**: Health status check.
+- **`GET /api/v1/metadata`**: Serves catalog metrics, game titles list, categories, mechanics, and themes.
+- **`POST /api/v1/recommend`**: Accepts user criteria, filters, and liked games JSON payload, executing vector dot-product similarity calculations.
+- **`POST /api/v1/bgg-collection`**: Fetches user collections live via BoardGameGeek XML API2.
+- **`POST /api/v1/explain`**: Calls local Ollama `phi3` model for AI explanations.
+- **`Swagger Interactive Documentation`**: Accessible at `http://localhost:8000/docs`.
 
 ---
 
@@ -17,19 +42,6 @@
   - **Sub-Complexity Slider (1.0 to 5.0):** Filter games by weight (*Light*, *Medium-Easy*, *Medium-Heavy*, *Heavy*).
 - **🤖 Local AI Explainer (Phi-3):** Connects to your local Ollama instance to generate custom, 3-sentence gameplay explanations based on shared mechanics and themes without hallucinations.
 - **⚡ Sub-Millisecond Performance:** Feature matrix compressed to `np.int8` for sub-2ms vector dot-product calculations.
-
----
-
-## 🏗️ Architecture Overview
-
-MeepleMind uses a **deterministic content-based calculation engine** rather than a black-box machine learning model or pure text vector search:
-
-1. **Feature Vectors (382 Dimensions):** Every game is represented as a binary vector across 382 unique categories, mechanics, and themes.
-2. **Cosine Similarity:** Computes the mathematical angle between user preference vectors and candidate game vectors:
-   $$\text{Similarity}(A, B) = \frac{A \cdot B}{\|A\| \|B\|}$$
-3. **Hybrid Score:** Blends feature similarity with BGG community ratings:
-   $$\text{Final Score} = (\text{Cosine Similarity} \times 0.8) + (\text{Normalized Bayes Rating} \times 0.2)$$
-4. **Fact-Grounded LLM Explainer:** The local LLM (Phi-3) receives the computed shared features directly in the prompt, eliminating hallucinations.
 
 ---
 
@@ -54,7 +66,7 @@ python -m venv venv
 # Linux / macOS:
 source venv/bin/activate
 
-# Install required dependencies
+# Install required dependencies (includes fastapi & uvicorn)
 pip install -r requirement.txt
 ```
 
@@ -68,12 +80,20 @@ ollama pull phi3
 
 ## 🚀 How to Run the Application
 
-1. Make sure your virtual environment is active.
-2. Launch the Streamlit server:
-   ```bash
-   streamlit run app_boardgame.py
-   ```
-3. Open your browser and navigate to the address shown in your terminal (default: `http://localhost:8501` or `http://localhost:8502`).
+In the decoupled architecture, run both the backend server and frontend client:
+
+### Step 1: Launch the FastAPI Backend Server
+```powershell
+python scripts/run_backend.py
+```
+*The backend API will run on **`http://localhost:8000`**. You can view the OpenAPI interactive Swagger docs at **`http://localhost:8000/docs`**.*
+
+### Step 2: Launch the Streamlit Frontend Client
+In a second terminal window:
+```powershell
+streamlit run app_boardgame.py
+```
+*The Streamlit client will run on **`http://localhost:8502`** and connect automatically to the FastAPI backend REST API.*
 
 ---
 
@@ -90,15 +110,20 @@ BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 ## 📁 Project Structure
 
 ```text
-├── app_boardgame.py         # Main application root entrypoint
+├── app_boardgame.py         # Main Streamlit frontend client entrypoint
 ├── recommender.py           # Import compatibility shim -> src.recommender
 ├── train_recommender.py     # Script launcher shim -> scripts.train_recommender
 ├── check_bgg.py             # Script launcher shim -> scripts.check_bgg
 ├── src/                     # Core application source package
+│   ├── api/                 # FastAPI REST API Backend
+│   │   ├── main.py          # FastAPI app & CORS middleware
+│   │   ├── routes.py        # REST API endpoints (/recommend, /metadata, /bgg-collection, /explain)
+│   │   └── schemas.py       # Pydantic request & response models
 │   ├── recommender/         # Recommendation engine & BGG XML API client
 │   │   ├── engine.py        # Vector similarity matching & filters
 │   │   └── bgg_api.py       # Live BoardGameGeek XML API parser
-│   ├── ui/                  # User interface modules
+│   ├── ui/                  # Streamlit User Interface
+│   │   ├── api_client.py    # HTTP client connecting to http://localhost:8000
 │   │   ├── styles.py        # Custom CSS styling tokens
 │   │   ├── components.py    # Card & badge UI renderers
 │   │   └── views.py         # Dashboard layout & controls
@@ -106,6 +131,7 @@ BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 │       ├── ai_explainer.py  # Local Ollama / Phi-3 API client
 │       └── config.py        # Project path & environment settings
 ├── scripts/                 # Execution & data processing scripts
+│   ├── run_backend.py       # FastAPI Uvicorn server launcher (port 8000)
 │   ├── train_recommender.py # Dataset merger & pickle matrix exporter
 │   └── check_bgg.py         # BGG API connectivity diagnostics
 ├── legacy/                  # Archived prototype drafts

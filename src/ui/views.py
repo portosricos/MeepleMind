@@ -1,9 +1,15 @@
 import streamlit as st
 import time
-from src.recommender.engine import load_data, recommend_games
-from src.recommender.bgg_api import fetch_bgg_collection
 from src.ui.styles import apply_custom_styles
 from src.ui.components import render_hero_header, render_game_card
+from src.ui.api_client import (
+    is_backend_online,
+    get_catalog_metadata,
+    fetch_recommendations_api,
+    sync_bgg_collection_api
+)
+from src.recommender.engine import load_data, recommend_games
+from src.recommender.bgg_api import fetch_bgg_collection
 
 def render_app():
     """Main rendering entrypoint for MeepleMind Streamlit Application."""
@@ -18,20 +24,38 @@ def render_app():
     # Apply custom CSS theme
     apply_custom_styles()
 
-    # Load dataset
+    # Check if FastAPI backend service is running
+    backend_active = is_backend_online()
+
+    # Load dataset & metadata
     try:
-        data = load_data()
-        df = data['metadata']
-        categories = data['categories']
-        mechanics = sorted(data['mechanics'])
-        themes = sorted(data['themes'])
-        all_names = sorted(df['Name'].tolist())
+        if backend_active:
+            metadata_dict, categories, mechanics, themes, all_names = get_catalog_metadata()
+            total_games = metadata_dict['total_games']
+            total_mechanics = metadata_dict['total_mechanics']
+            total_themes = metadata_dict['total_themes']
+        else:
+            data = load_data()
+            df = data['metadata']
+            categories = data['categories']
+            mechanics = sorted(data['mechanics'])
+            themes = sorted(data['themes'])
+            all_names = sorted(df['Name'].tolist())
+            total_games = len(df)
+            total_mechanics = len(mechanics)
+            total_themes = len(themes)
     except Exception as e:
-        st.error(f"Failed to load dataset: {e}. Make sure scripts/train_recommender.py has been run.")
+        st.error(f"Failed to load dataset metadata: {e}.")
         st.stop()
 
     # Hero Header Banner
     render_hero_header()
+
+    # Display Architecture Status Badge
+    if backend_active:
+        st.caption("🟢 **System Architecture:** Decoupled Mode — Streamlit Frontend connected to FastAPI Backend REST API (`http://localhost:8000`)")
+    else:
+        st.caption("🟡 **System Architecture:** Monolithic Direct Mode (FastAPI Backend Server on `http://localhost:8000` is offline)")
 
     # Initialize Session States
     if 'liked_games' not in st.session_state:
@@ -159,7 +183,10 @@ def render_app():
             
         if fetch_btn and bgg_username.strip():
             with st.spinner("Connecting to BGG XML API..."):
-                success, error_msg, matched = fetch_bgg_collection(bgg_username, all_names)
+                if backend_active:
+                    success, error_msg, matched = sync_bgg_collection_api(bgg_username)
+                else:
+                    success, error_msg, matched = fetch_bgg_collection(bgg_username, all_names)
                 
                 if success:
                     if matched:
@@ -224,18 +251,32 @@ def render_app():
     st.markdown("---")
 
     # Execute Recommendations
-    recs = recommend_games(
-        selected_names=st.session_state.liked_games,
-        player_count_range=player_count_range,
-        playtime_option=playtime_option,
-        complexity_range=complexity_range,
-        selected_cats=selected_cats,
-        selected_mechs=selected_mechs,
-        selected_themes=selected_themes,
-        exclude_names=st.session_state.bgg_library if exclude_bgg_owned else None,
-        use_profile_similarity=use_profile_similarity,
-        top_n=5
-    )
+    if backend_active:
+        recs = fetch_recommendations_api(
+            selected_names=st.session_state.liked_games,
+            player_count_range=player_count_range,
+            playtime_option=playtime_option,
+            complexity_range=complexity_range,
+            selected_cats=selected_cats,
+            selected_mechs=selected_mechs,
+            selected_themes=selected_themes,
+            exclude_names=st.session_state.bgg_library if exclude_bgg_owned else None,
+            use_profile_similarity=use_profile_similarity,
+            top_n=5
+        )
+    else:
+        recs = recommend_games(
+            selected_names=st.session_state.liked_games,
+            player_count_range=player_count_range,
+            playtime_option=playtime_option,
+            complexity_range=complexity_range,
+            selected_cats=selected_cats,
+            selected_mechs=selected_mechs,
+            selected_themes=selected_themes,
+            exclude_names=st.session_state.bgg_library if exclude_bgg_owned else None,
+            use_profile_similarity=use_profile_similarity,
+            top_n=5
+        )
 
     # Display Recommendations
     if recs:
@@ -261,6 +302,6 @@ def render_app():
         
         st.markdown("**Dataset Sizes:**")
         m_col1, m_col2, m_col3 = st.columns(3)
-        m_col1.metric("Total Board Games", f"{len(df):,}")
-        m_col2.metric("Total Mechanics Mapped", f"{len(mechanics)}")
-        m_col3.metric("Total Themes Mapped", f"{len(themes)}")
+        m_col1.metric("Total Board Games", f"{total_games:,}")
+        m_col2.metric("Total Mechanics Mapped", f"{total_mechanics}")
+        m_col3.metric("Total Themes Mapped", f"{total_themes}")
