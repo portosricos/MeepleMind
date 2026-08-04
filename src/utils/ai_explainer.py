@@ -1,4 +1,7 @@
+import os
 import requests
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 def ask_ollama(prompt: str, model: str = "phi3") -> str:
     """Send prompt to local Ollama API model and return text response."""
@@ -8,7 +11,7 @@ def ask_ollama(prompt: str, model: str = "phi3") -> str:
         "stream": False
     }
     try:
-        response = requests.post("http://localhost:11434/api/generate", json=payload, timeout=120)
+        response = requests.post(f"{OLLAMA_HOST}/api/generate", json=payload, timeout=120)
         response.raise_for_status()
         return response.json()["response"].strip()
     except Exception as e:

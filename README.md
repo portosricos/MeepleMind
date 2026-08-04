@@ -1,22 +1,24 @@
 # 🎲 MeepleMind - Premium Board Game Suggestion System
 
-**MeepleMind** is a decoupled full-stack board game recommendation platform powered by a **FastAPI REST API Backend**, a **Streamlit Frontend Client**, linear algebra (Cosine Similarity), and local AI (Ollama Phi-3). Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
+**MeepleMind** is a decoupled full-stack board game recommendation platform powered by a **FastAPI REST API Backend**, a **Streamlit Frontend Client**, linear algebra (Cosine Similarity), local AI (Ollama Phi-3), and **Docker Containerization**. Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
 
 ---
 
-## 🏗️ Decoupled Architecture Overview
+## 🏗️ Architecture Overview
 
-MeepleMind decouples presentation from computation:
+MeepleMind decouples presentation from computation and can be run either locally or via Docker Compose:
 
 ```text
-┌────────────────────────────────┐         HTTP REST API         ┌────────────────────────────────┐
-│  Streamlit Frontend (UI)       │ ───────────────────────────>  │  FastAPI Backend Server        │
-│  Port: 8502                    │  POST /api/v1/recommend       │  Port: 8000                    │
-│  (src/ui/ & app_boardgame.py)  │  POST /api/v1/bgg-collection  │  (src/api/ & run_backend.py)   │
-└────────────────────────────────┘ <───────────────────────────  └────────────────────────────────┘
-                                           JSON Responses                      │
-                                                                               ▼
-                                                                  NumPy Vector Engine & Ollama
+                                  docker-compose.yml
+ ┌──────────────────────────────────────────────────────────────────────────────────┐
+ │                                                                                  │
+ │   ┌───────────────────────────┐   HTTP REST API   ┌───────────────────────────┐  │
+ │   │  Frontend Container       │ ────────────────> │  Backend Container        │  │
+ │   │  (Streamlit)              │  http://backend:8000  (FastAPI)               │  │
+ │   │  Port 8502 (Host: 8502)   │ <──────────────── │  Port 8000 (Host: 8000)   │  │
+ │   └───────────────────────────┘   JSON Responses  └───────────────────────────┘  │
+ │                                                                                  │
+ └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 🛰️ REST API Endpoints (`http://localhost:8000`):
@@ -29,71 +31,47 @@ MeepleMind decouples presentation from computation:
 
 ---
 
-## ✨ Features
+## 🐳 Running with Docker (Recommended)
 
-- **🔍 Dual Selection Modes:**
-  - **Manual Search:** Search and select games directly from our 22,000+ game catalog.
-  - **Live BGG Collection Sync:** Input your BoardGameGeek username to fetch your owned collection live via the BGG XML API2.
-- **🚫 Exclude Owned Games:** Filter out your existing BGG collection so suggestions only contain games you don't already own.
-- **🎯 Profile-Wide Pairwise Matching:** Option to match candidate games against your entire collection using a Top-5 K-Nearest Neighbors (KNN) pairwise vector approach to prevent vector dilution.
-- **🎛️ Fine-Grained Range Filters:**
-  - **Player Count Range Slider:** Filter games that support your exact group size (e.g., 2 to 4 players).
-  - **Playtime Presets:** Select session lengths (*Short <30m*, *Medium 30-60m*, *Long 60-120m*, *Epic 120-200m*, *Legendary 200m+*).
-  - **Sub-Complexity Slider (1.0 to 5.0):** Filter games by weight (*Light*, *Medium-Easy*, *Medium-Heavy*, *Heavy*).
-- **🤖 Local AI Explainer (Phi-3):** Connects to your local Ollama instance to generate custom, 3-sentence gameplay explanations based on shared mechanics and themes without hallucinations.
-- **⚡ Sub-Millisecond Performance:** Feature matrix compressed to `np.int8` for sub-2ms vector dot-product calculations.
+Run the entire application (Backend API + Frontend UI) with a single command:
+
+```powershell
+# Build and launch containers in detached mode
+docker compose up --build -d
+```
+
+- **Frontend Dashboard:** Open `http://localhost:8502`
+- **Backend API & Docs:** Open `http://localhost:8000/docs`
+
+To stop the containers:
+```powershell
+docker compose down
+```
 
 ---
 
-## 🛠️ Installation & Prerequisites
+## 🚀 Running Locally (Without Docker)
 
-### 1. Prerequisites
-- **Python 3.12+** installed on your system.
-- **Ollama** installed for local AI explanations. Download from [ollama.com](https://ollama.com).
-
-### 2. Clone & Environment Setup
-```bash
-# Clone the repository
-git clone https://github.com/your-username/data_mining_final_project.git
-cd data_mining_final_project
-
-# Create a virtual environment
+### 1. Environment Setup
+```powershell
+# Create & activate virtual environment
 python -m venv venv
-
-# Activate the virtual environment
-# Windows (PowerShell):
 .\venv\Scripts\activate
-# Linux / macOS:
-source venv/bin/activate
 
-# Install required dependencies (includes fastapi & uvicorn)
+# Install dependencies
 pip install -r requirement.txt
 ```
 
-### 3. Local AI Setup (Ollama)
-Ensure the Ollama application is running, then pull the `phi3` model:
-```bash
-ollama pull phi3
-```
+### 2. Launch Services
+In two separate terminals:
 
----
-
-## 🚀 How to Run the Application
-
-In the decoupled architecture, run both the backend server and frontend client:
-
-### Step 1: Launch the FastAPI Backend Server
 ```powershell
+# Terminal 1: FastAPI Backend REST API
 python scripts/run_backend.py
-```
-*The backend API will run on **`http://localhost:8000`**. You can view the OpenAPI interactive Swagger docs at **`http://localhost:8000/docs`**.*
 
-### Step 2: Launch the Streamlit Frontend Client
-In a second terminal window:
-```powershell
+# Terminal 2: Streamlit Frontend Client
 streamlit run app_boardgame.py
 ```
-*The Streamlit client will run on **`http://localhost:8502`** and connect automatically to the FastAPI backend REST API.*
 
 ---
 
@@ -110,6 +88,10 @@ BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 ## 📁 Project Structure
 
 ```text
+├── docker-compose.yml       # Docker Compose multi-container orchestrator
+├── Dockerfile.backend       # Docker image definition for FastAPI Backend API
+├── Dockerfile.frontend      # Docker image definition for Streamlit Frontend UI
+├── .dockerignore            # Excludes virtual environments and build cache
 ├── app_boardgame.py         # Main Streamlit frontend client entrypoint
 ├── recommender.py           # Import compatibility shim -> src.recommender
 ├── train_recommender.py     # Script launcher shim -> scripts.train_recommender

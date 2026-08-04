@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Any, Union
 
 class HealthResponse(BaseModel):
     status: str
@@ -29,7 +29,7 @@ class RecommendationRequest(BaseModel):
 class RecommendationItem(BaseModel):
     BGGId: int
     Name: str
-    Description: Optional[str] = ""
+    Description: Optional[Any] = ""
     YearPublished: int
     GameWeight: float
     AvgRating: float
@@ -38,11 +38,11 @@ class RecommendationItem(BaseModel):
     MaxPlayers: int
     ComAgeRec: float
     LanguageEase: float
-    BestPlayers: Optional[str] = ""
+    BestPlayers: Optional[Any] = ""
     TotalEngagement: int
     MaxPlaytime: float
     MinPlaytime: float
-    ImagePath: Optional[str] = ""
+    ImagePath: Optional[Any] = ""
     Categories: List[str]
     Mechanics: List[str]
     Themes: List[str]

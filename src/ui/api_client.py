@@ -1,7 +1,9 @@
+import os
 import requests
 from typing import Tuple, List, Dict, Any, Optional
+from src.recommender.engine import recommend_games
 
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 def is_backend_online() -> bool:
     """Check if FastAPI backend server is online at http://localhost:8000/health."""
@@ -42,7 +44,7 @@ def fetch_recommendations_api(
     use_profile_similarity: bool = False,
     top_n: int = 5
 ) -> List[Dict[str, Any]]:
-    """Send recommendation request payload to POST /api/v1/recommend."""
+    """Send recommendation request payload to POST /api/v1/recommend with fallback."""
     payload = {
         "selected_names": selected_names,
         "player_count_range": list(player_count_range) if player_count_range else None,
@@ -55,9 +57,38 @@ def fetch_recommendations_api(
         "use_profile_similarity": use_profile_similarity,
         "top_n": top_n
     }
-    res = requests.post(f"{API_BASE_URL}/api/v1/recommend", json=payload, timeout=15)
-    res.raise_for_status()
-    return res.json()
+    try:
+        res = requests.post(f"{API_BASE_URL}/api/v1/recommend", json=payload, timeout=15)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            # Fallback to local computation if backend returns unexpected status
+            return recommend_games(
+                selected_names=selected_names,
+                player_count_range=player_count_range,
+                playtime_option=playtime_option,
+                complexity_range=complexity_range,
+                selected_cats=selected_cats,
+                selected_mechs=selected_mechs,
+                selected_themes=selected_themes,
+                exclude_names=exclude_names,
+                use_profile_similarity=use_profile_similarity,
+                top_n=top_n
+            )
+    except Exception:
+        # Fallback to local computation if HTTP connection fails
+        return recommend_games(
+            selected_names=selected_names,
+            player_count_range=player_count_range,
+            playtime_option=playtime_option,
+            complexity_range=complexity_range,
+            selected_cats=selected_cats,
+            selected_mechs=selected_mechs,
+            selected_themes=selected_themes,
+            exclude_names=exclude_names,
+            use_profile_similarity=use_profile_similarity,
+            top_n=top_n
+        )
 
 def sync_bgg_collection_api(username: str) -> Tuple[bool, str, List[str]]:
     """Send username payload to POST /api/v1/bgg-collection."""
