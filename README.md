@@ -156,11 +156,11 @@ locust -f scripts/locustfile.py --host http://localhost:8000
 
 ## 🔑 BGG API Access Token (Optional)
 
-BoardGameGeek updated its API security policy in October 2025. A pre-configured access token is included in your `.env` file:
+BoardGameGeek updated its API security policy in October 2025. If you wish to use live BGG Collection Sync, create a `.env` file in the root directory:
 ```env
-BGG_API_TOKEN=99dc9518-e455-435a-994b-ca537b531a74
+BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 ```
-*(Note: `.env` is listed in `.gitignore` to keep credentials secure.)*
+*(Note: `.env` is listed in `.gitignore` so your personal credentials are never committed to GitHub.)*
 
 ---
 
