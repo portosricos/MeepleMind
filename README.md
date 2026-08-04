@@ -90,13 +90,32 @@ BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 ## 📁 Project Structure
 
 ```text
-├── app_boardgame.py         # Streamlit web application & UI layout
-├── recommender.py           # Cosine similarity engine & candidate filter logic
-├── train_recommender.py     # Data preprocessing & feature matrix generator
-├── processed_games.pkl      # Precalculated feature matrix & metadata pickle
+├── app_boardgame.py         # Main application root entrypoint
+├── recommender.py           # Import compatibility shim -> src.recommender
+├── train_recommender.py     # Script launcher shim -> scripts.train_recommender
+├── check_bgg.py             # Script launcher shim -> scripts.check_bgg
+├── src/                     # Core application source package
+│   ├── recommender/         # Recommendation engine & BGG XML API client
+│   │   ├── engine.py        # Vector similarity matching & filters
+│   │   └── bgg_api.py       # Live BoardGameGeek XML API parser
+│   ├── ui/                  # User interface modules
+│   │   ├── styles.py        # Custom CSS styling tokens
+│   │   ├── components.py    # Card & badge UI renderers
+│   │   └── views.py         # Dashboard layout & controls
+│   └── utils/               # Utilities & configuration
+│       ├── ai_explainer.py  # Local Ollama / Phi-3 API client
+│       └── config.py        # Project path & environment settings
+├── scripts/                 # Execution & data processing scripts
+│   ├── train_recommender.py # Dataset merger & pickle matrix exporter
+│   └── check_bgg.py         # BGG API connectivity diagnostics
+├── legacy/                  # Archived prototype drafts
+├── notebooks/               # Data exploration Jupyter notebooks
+├── docs/                    # Presentations, guides, and UI screenshots
+├── raw_data/                # Raw BGG CSV datasets
+├── processed_games.pkl      # Precalculated feature matrix & metadata
 ├── requirement.txt          # Python dependencies
-├── .env                     # Local environment variables (BGG Token)
-└── .gitignore               # Ignored files (venv, raw data, secrets)
+├── .env                     # Local environment secrets (BGG Token)
+└── .gitignore               # Git ignored files & directories
 ```
 
 ---
