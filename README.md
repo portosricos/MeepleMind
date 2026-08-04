@@ -1,12 +1,12 @@
 # 🎲 MeepleMind - Premium Board Game Suggestion System
 
-**MeepleMind** is a decoupled full-stack board game recommendation platform powered by a **FastAPI REST API Backend**, a **Streamlit Frontend Client**, linear algebra (Cosine Similarity), local AI (Ollama Phi-3), and **Docker Containerization**. Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
+**MeepleMind** is a decoupled full-stack board game recommendation platform powered by a **FastAPI REST API Backend**, a **Streamlit Frontend Client**, linear algebra (Cosine Similarity), local AI (Ollama Phi-3), **Docker Containerization**, and **Locust Performance Load Testing**. Built on a dataset of over 22,000 board games mined from BoardGameGeek (BGG), it allows users to discover new board games based on feature similarity, exact physical constraints, and live BGG user profile imports.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-MeepleMind decouples presentation from computation and can be run either locally or via Docker Compose:
+MeepleMind decouples presentation from computation and includes a dedicated performance stress-testing harness:
 
 ```text
                                   docker-compose.yml
@@ -17,31 +17,51 @@ MeepleMind decouples presentation from computation and can be run either locally
  │   │  (Streamlit)              │  http://backend:8000  (FastAPI)               │  │
  │   │  Port 8502 (Host: 8502)   │ <──────────────── │  Port 8000 (Host: 8000)   │  │
  │   └───────────────────────────┘   JSON Responses  └───────────────────────────┘  │
- │                                                                                  │
+ │                                                         ▲                        │
+ │   ┌───────────────────────────┐                         │ HTTP Load Tests        │
+ │   │  Locust Stress Tester     │ ────────────────────────┘                        │
+ │   │  (Port 8089 - Web UI)     │                                                  │
+ │   └───────────────────────────┘                                                  │
  └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 🛰️ REST API Endpoints (`http://localhost:8000`):
-- **`GET /health`**: Health status check.
-- **`GET /api/v1/metadata`**: Serves catalog metrics, game titles list, categories, mechanics, and themes.
-- **`POST /api/v1/recommend`**: Accepts user criteria, filters, and liked games JSON payload, executing vector dot-product similarity calculations.
-- **`POST /api/v1/bgg-collection`**: Fetches user collections live via BoardGameGeek XML API2.
-- **`POST /api/v1/explain`**: Calls local Ollama `phi3` model for AI explanations.
-- **`Swagger Interactive Documentation`**: Accessible at `http://localhost:8000/docs`.
+---
+
+## 📊 Locust Performance & Load Testing
+
+We use **Locust** to benchmark sub-millisecond vector similarity calculations and API throughput under concurrent load.
+
+### Option A: Running Locust via Docker Compose (Recommended)
+Launch the entire stack including the Locust web dashboard:
+```powershell
+docker compose up --build -d
+```
+- Open **`http://localhost:8089`** in your browser.
+- Set Host to `http://backend:8000`, enter your desired number of concurrent users (e.g. 50 users, spawn rate 5/sec), and click **Start swarming**.
+
+### Option B: Running Locust Locally
+If running the app without Docker:
+```powershell
+# 1. Start the FastAPI backend (Terminal 1)
+python scripts/run_backend.py
+
+# 2. Launch Locust UI (Terminal 2)
+locust -f scripts/locustfile.py --host http://localhost:8000
+```
+- Open **`http://localhost:8089`** to monitor real-time Requests Per Second (RPS), response latency percentiles (50th, 95th, 99th), and zero-error rates.
 
 ---
 
-## 🐳 Running with Docker (Recommended)
-
-Run the entire application (Backend API + Frontend UI) with a single command:
+## 🐳 Running with Docker
 
 ```powershell
-# Build and launch containers in detached mode
+# Build and launch all 4 containers (backend, frontend, ollama, locust)
 docker compose up --build -d
 ```
 
-- **Frontend Dashboard:** Open `http://localhost:8502`
-- **Backend API & Docs:** Open `http://localhost:8000/docs`
+- **Frontend Dashboard:** `http://localhost:8502`
+- **Backend API & Swagger Docs:** `http://localhost:8000/docs`
+- **Locust Load Generator:** `http://localhost:8089`
 
 To stop the containers:
 ```powershell
@@ -52,24 +72,17 @@ docker compose down
 
 ## 🚀 Running Locally (Without Docker)
 
-### 1. Environment Setup
 ```powershell
-# Create & activate virtual environment
+# 1. Activate virtual environment & install requirements
 python -m venv venv
 .\venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirement.txt
-```
 
-### 2. Launch Services
-In two separate terminals:
-
-```powershell
-# Terminal 1: FastAPI Backend REST API
+# 2. Launch services in separate terminals:
+# Terminal 1 (Backend API):
 python scripts/run_backend.py
 
-# Terminal 2: Streamlit Frontend Client
+# Terminal 2 (Streamlit UI):
 streamlit run app_boardgame.py
 ```
 
@@ -77,19 +90,18 @@ streamlit run app_boardgame.py
 
 ## 🔑 BGG API Access Token (Optional)
 
-BoardGameGeek updated its API security in October 2025. If you wish to use the live BGG Collection Sync, create a `.env` file in the root directory:
+BoardGameGeek updated its API security in October 2025. Create a `.env` file in the root directory:
 ```env
 BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 ```
-*(Note: `.env` is listed in `.gitignore` to keep your credentials secure.)*
 
 ---
 
 ## 📁 Project Structure
 
 ```text
-├── docker-compose.yml       # Docker Compose multi-container orchestrator
-├── Dockerfile.backend       # Docker image definition for FastAPI Backend API
+├── docker-compose.yml       # Docker Compose multi-container orchestrator (4 services)
+├── Dockerfile.backend       # Docker image definition for FastAPI Backend & Locust
 ├── Dockerfile.frontend      # Docker image definition for Streamlit Frontend UI
 ├── .dockerignore            # Excludes virtual environments and build cache
 ├── app_boardgame.py         # Main Streamlit frontend client entrypoint
@@ -113,6 +125,7 @@ BGG_API_TOKEN=your_registered_bgg_bearer_token_here
 │       ├── ai_explainer.py  # Local Ollama / Phi-3 API client
 │       └── config.py        # Project path & environment settings
 ├── scripts/                 # Execution & data processing scripts
+│   ├── locustfile.py        # Locust load testing tasks & user scenarios
 │   ├── run_backend.py       # FastAPI Uvicorn server launcher (port 8000)
 │   ├── train_recommender.py # Dataset merger & pickle matrix exporter
 │   └── check_bgg.py         # BGG API connectivity diagnostics

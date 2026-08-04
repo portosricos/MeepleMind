@@ -34,5 +34,17 @@ services:
       - ollama_storage:/root/.ollama
     restart: unless-stopped
 
+  locust:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: meeplemind-locust
+    ports:
+      - "8089:8089"
+    command: locust -f scripts/locustfile.py --host http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   ollama_storage:
